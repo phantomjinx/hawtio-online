@@ -114,19 +114,19 @@ export class ManagementService extends EventEmitter {
       /*
        * Test the jolokia url to see if it is valid
        */
-      try {
-        const url = await mPod.probeJolokiaUrl()
-        if (!url) {
-          this.emitUpdate(uid, fingerprint === this.fingerprint(mPod.management))
-        }
-      } catch (error) {
-        log.error(new Error(`Cannot access jolokia url at ${mPod.jolokiaPath}`, { cause: error }))
-        log.error(error)
-        mPod.management.status.error = true
-        console.log("Error being thrown but emitting update anyway")
-        this.emitUpdate(uid, fingerprint === this.fingerprint(mPod.management))
-        continue
-      }
+      // try {
+      //   const url = await mPod.probeJolokiaUrl()
+      //   if (!url) {
+      //     this.emitUpdate(uid, fingerprint === this.fingerprint(mPod.management))
+      //   }
+      // } catch (error) {
+      //   log.error(new Error(`Cannot access jolokia url at ${mPod.jolokiaPath}`, { cause: error }))
+      //   log.error(error)
+      //   mPod.management.status.error = true
+      //   console.log("Error being thrown but emitting update anyway")
+      //   this.emitUpdate(uid, fingerprint === this.fingerprint(mPod.management))
+      //   continue
+      // }
 
       mPod.jolokia.search('org.apache.camel:context=*,type=routes,*', {
         method: 'POST',

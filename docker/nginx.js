@@ -15,7 +15,16 @@ var useForm = process.env['HAWTIO_ONLINE_AUTH'] === 'form';
 
 export default { proxyJolokiaAgent };
 
+/*
+ * Change: [response|request]Body -> [response|request]Text
+ * The property was made obsolete in 0.5.0 and was removed in 0.8.0.
+ * The r.responseBuffer or the r.responseText property should be used instead.
+ */
+
 function proxyJolokiaAgent(req) {
+  req.log("=== PROXY JOLOKIA REQUEST ===");
+  req.log("Request URL: " + req.uri);
+
   var parts = req.uri.match(/\/management\/namespaces\/(.+)\/pods\/(http|https):(.+):(\d+)\/(.*)/);
   if (!parts) {
     req.return(404);
@@ -27,14 +36,16 @@ function proxyJolokiaAgent(req) {
   var port = parts[4];
   var path = parts[5];
 
+  req.log(`NAMESPACE: ${namespace}`)
+  req.log(`PROTOCOL: ${protocol}`)
+  req.log(`POD: ${pod}`)
+  req.log(`PORT: ${port}`)
+  req.log(`PATH: ${path}`)
+
   function jsonResponse(res) {
-    req.log("Determining payload ...")
+    req.log("==== jsonResponse ====")
     let payload = {}
-    if (res && res.responseBody) {
-      req.log("Have a responseBody")
-      payload = res.responseBody
-    } else if (res && res.responseText) {
-      req.log("Have a responseText")
+    if (res && res.responseText) {
       payload = res.responseText
     }
 
@@ -45,6 +56,7 @@ function proxyJolokiaAgent(req) {
   }
 
   function response(res) {
+    req.log("==== response ====")
     req.log(`PGR1 response: status=${res.status}`);
 
     if (res.headersOut) {
@@ -54,12 +66,11 @@ function proxyJolokiaAgent(req) {
     }
 
     req.log("The response: ");
-    const resultObj = jsonResponse(res);
-    req.log("Result obj is ummm an object");
-    req.return(res.status, JSON.stringify(resultObj));
+    req.return(res.status, res.responseText);
   }
 
   function reject(status, message) {
+    req.log("==== reject ====")
     return Promise.reject({
       status: status,
       responseBody: message,
@@ -70,6 +81,7 @@ function proxyJolokiaAgent(req) {
   }
 
   function getSubjectFromJwt() {
+    req.log("==== getSubjectFromJwt ====")
     var authz = req.headersIn['Authorization'];
     if (!authz) {
       req.error('Authorization header not found in request');
@@ -81,6 +93,7 @@ function proxyJolokiaAgent(req) {
   }
 
   function selfLocalSubjectAccessReview(verb) {
+    req.log("==== selfLocalSubjectAccessReview ====")
     var api;
     var body;
     // When form is used, don't rely on OpenShift-specific LocalSubjectAccessReview
@@ -129,6 +142,7 @@ function proxyJolokiaAgent(req) {
   }
 
   function getPodIP() {
+    req.log("==== getPodIP ====")
     return req.subrequest(`/podIP/${namespace}/${pod}`, { method: 'GET' }).then(res => {
       req.log(`getPodIP(${namespace}/${pod}): status=${res.status}`);
 
@@ -141,6 +155,7 @@ function proxyJolokiaAgent(req) {
 
   // This is usually called once upon the front-end loads, still we may want to cache it
   function listMBeans(podIP) {
+    req.log("==== listMBeans ====")
     return req.subrequest(`/proxy/${protocol}:${podIP}:${port}/${path}`, { method: 'POST', body: JSON.stringify({ type: 'list' }) }).then(res => {
       if (res.status !== 200) {
         return Promise.reject(res);
@@ -150,6 +165,7 @@ function proxyJolokiaAgent(req) {
   }
 
   function callJolokiaAgent(podIP, request) {
+    req.log("==== callJolokiaAgent ====")
     var encodedPath = encodeURI(path);
     req.log(`callJolokiaAgent: ${req.method} /proxy/${protocol}:${podIP}:${port}/${encodedPath}`);
     if (req.method === 'GET') {
@@ -162,6 +178,7 @@ function proxyJolokiaAgent(req) {
   }
 
   function proxyJolokiaAgentWithoutRbac() {
+    req.log("==== proxyJolokiaAgentWithoutRbac ====")
     // Only requests impersonating a user granted the `update` verb on for the pod
     // hosting the Jolokia endpoint is authorized
     return selfLocalSubjectAccessReview('update')
@@ -184,7 +201,7 @@ function proxyJolokiaAgent(req) {
   }
 
   function proxyJolokiaAgentWithRbac() {
-    req.log("=== START OF PROCESS ===");
+    req.log("==== proxyJolokiaAgentWithRbac ====")
     return selfLocalSubjectAccessReview('update')
       .then(res => {
         req.log(`proxyJolokiaAgentWithRbac(update): status=${res.status}`);
@@ -230,7 +247,9 @@ function proxyJolokiaAgent(req) {
   }
 
   function parseRequest() {
+    req.log("==== parseRequest ====")
     if (req.method === 'POST') {
+      req.log(`parseRequest: is a POST so parsing requestBody: ${req.requestBody} or maybe should be ${req.requestText}`)
       return JSON.parse(req.requestBody);
     }
 
@@ -283,6 +302,7 @@ function proxyJolokiaAgent(req) {
   }
 
   function handleRequestWithRole(role) {
+    req.log("==== handleRequestWithRole ====")
     var request = parseRequest();
     if (req.method === 'GET') {
       req.log(`handleRequestWithRole: ${req.method} request=${JSON.stringify(request)}`);
