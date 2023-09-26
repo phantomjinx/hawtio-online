@@ -10,3 +10,12 @@ resources:
 patchesStrategicMerge:
 - patch-deployment.yml
 - patch-service.yml
+namespace: hawtio-dev
+images:
+- name: hawtio/online
+  newName: quay.io/phantomjinx/hawtio-online
+  newTag: 2.x.20230926_144303
+patches:
+- path: ../../patches/patch-os-console-url.yml
+  target:
+    kind: Deployment

@@ -27,13 +27,36 @@ function proxyJolokiaAgent(req) {
   var port = parts[4];
   var path = parts[5];
 
-  function response(res) {
-    req.log(`response: status=${res.status}`);
-
-    for (var header in res.headersOut) {
-      req.headersOut[header] = res.headersOut[header];
+  function jsonResponse(res) {
+    req.log("Determining payload ...")
+    let payload = {}
+    if (res && res.responseBody) {
+      req.log("Have a responseBody")
+      payload = res.responseBody
+    } else if (res && res.responseText) {
+      req.log("Have a responseText")
+      payload = res.responseText
     }
-    req.return(res.status, res.responseBody);
+
+    req.log('Parsing the payload: ' + payload)
+    const resBody = JSON.parse(payload)
+    req.log('Successfully parsed body')
+    return resBody
+  }
+
+  function response(res) {
+    req.log(`PGR1 response: status=${res.status}`);
+
+    if (res.headersOut) {
+      for (var header in res.headersOut) {
+        req.headersOut[header] = res.headersOut[header];
+      }
+    }
+
+    req.log("The response: ");
+    const resultObj = jsonResponse(res);
+    req.log("Result obj is ummm an object");
+    req.return(res.status, JSON.stringify(resultObj));
   }
 
   function reject(status, message) {
@@ -87,7 +110,7 @@ function proxyJolokiaAgent(req) {
         namespace: namespace,
         verb: verb,
         resource: 'pods',
-        name: pod,
+        resourceName: pod,
       };
     }
     var json = JSON.stringify(body);
@@ -95,9 +118,13 @@ function proxyJolokiaAgent(req) {
 
     // Work-around same-location sub-requests caching issue
     var suffix = verb === 'get' ? '2' : '';
+
+    req.log(`SubRequest: /authorization${suffix}/${api}/namespaces/${namespace}/localsubjectaccessreviews}`)
+    req.log(`Body: ${json}`)
+
     return req.subrequest(`/authorization${suffix}/${api}/namespaces/${namespace}/localsubjectaccessreviews`, {
       method: 'POST',
-      body: json,
+      body: json
     });
   }
 
@@ -108,7 +135,7 @@ function proxyJolokiaAgent(req) {
       if (res.status !== 200) {
         return Promise.reject(res);
       }
-      return JSON.parse(res.responseBody).status.podIP;
+      return jsonResponse(res).status.podIP;
     });
   }
 
@@ -118,7 +145,7 @@ function proxyJolokiaAgent(req) {
       if (res.status !== 200) {
         return Promise.reject(res);
       }
-      return JSON.parse(res.responseBody).value;
+      return jsonResponse(res).value;
     });
   }
 
@@ -126,8 +153,10 @@ function proxyJolokiaAgent(req) {
     var encodedPath = encodeURI(path);
     req.log(`callJolokiaAgent: ${req.method} /proxy/${protocol}:${podIP}:${port}/${encodedPath}`);
     if (req.method === 'GET') {
+      req.log("GET callJolokiaAgent")
       return req.subrequest(`/proxy/${protocol}:${podIP}:${port}/${encodedPath}`);
     } else {
+      req.log("OTHER callJolokiaAgent")
       return req.subrequest(`/proxy/${protocol}:${podIP}:${port}/${encodedPath}`, { method: req.method, body: request });
     }
   }
@@ -142,7 +171,7 @@ function proxyJolokiaAgent(req) {
         if (res.status !== 201) {
           return Promise.reject(res);
         }
-        var sar = JSON.parse(res.responseBody);
+        var sar = jsonResponse(res);
         var allowed = useForm ? sar.status.allowed : sar.allowed;
         if (!allowed) {
           return reject(403, JSON.stringify(sar));
@@ -155,6 +184,7 @@ function proxyJolokiaAgent(req) {
   }
 
   function proxyJolokiaAgentWithRbac() {
+    req.log("=== START OF PROCESS ===");
     return selfLocalSubjectAccessReview('update')
       .then(res => {
         req.log(`proxyJolokiaAgentWithRbac(update): status=${res.status}`);
@@ -162,12 +192,19 @@ function proxyJolokiaAgent(req) {
         if (res.status !== 201) {
           return Promise.reject(res);
         }
-        var sar = JSON.parse(res.responseBody);
+
+        req.log(`proxyJolokiaAgentWithRbac(update): parsing response body`);
+        req.log(`proxyJolokiaAgentWithRbac(update) response: ${res.responseText}`);
+
+        var sar = jsonResponse(res);
         var allowed = useForm ? sar.status.allowed : sar.allowed;
         if (allowed) {
+          req.log(`proxyJolokiaAgentWithRbac(update): allowed as admin`);
           // map the `update` verb to the `admin` role
           return 'admin';
         }
+
+        req.log(`proxyJolokiaAgentWithRbac(update): returning selfLocalSubjectAccessReview("get")`);
         return selfLocalSubjectAccessReview('get')
           .then(res => {
             req.log(`proxyJolokiaAgentWithRbac(get): status=${res.status}`);
@@ -175,7 +212,7 @@ function proxyJolokiaAgent(req) {
             if (res.status !== 201) {
               return Promise.reject(res);
             }
-            sar = JSON.parse(res.responseBody);
+            sar = jsonResponse(res);
             allowed = useForm ? sar.status.allowed : sar.allowed;
             if (allowed) {
               // map the `get` verb to the `viewer` role
@@ -184,7 +221,12 @@ function proxyJolokiaAgent(req) {
             return reject(403, JSON.stringify(sar));
           });
       })
-      .then(handleRequestWithRole);
+      .then((role) => {
+        req.log("Handling Request With Role");
+        var handler = handleRequestWithRole(role);
+        req.log("Completed handling request with role");
+        return handler;
+      });
   }
 
   function parseRequest() {
@@ -253,9 +295,15 @@ function proxyJolokiaAgent(req) {
           var rbac = request.map(r => RBAC.check(r, role));
           var intercept = request.filter((_, i) => rbac[i].allowed).map(r => RBAC.intercept(r, role, mbeans));
           var requestBody = JSON.stringify(intercept.filter(i => !i.intercepted).map(i => i.request));
+          req.log("inside handling request with role - about to callJolokiaAgent")
           return callJolokiaAgent(podIP, requestBody)
             .then(jolokia => {
-              var body = JSON.parse(jolokia.responseBody);
+              req.log("Post callJolokiaAgent");
+              var body = jsonResponse(jolokia);
+
+              req.log("Post callJolokiaAgent: ");
+              req.log(body);
+
               // Unroll intercepted requests
               var bulk = intercept.reduce((res, rbac, i) => {
                 if (rbac.intercepted) {
@@ -265,6 +313,9 @@ function proxyJolokiaAgent(req) {
                 }
                 return res;
               }, []);
+
+              req.log("Unrolled bulk");
+
               // Unroll denied requests
               bulk = rbac.reduce((res, rbac, i) => {
                 if (rbac.allowed) {
@@ -278,22 +329,36 @@ function proxyJolokiaAgent(req) {
                 }
                 return res;
               }, []);
+
+              req.log("Unrolled denied requests");
+
               // Re-assembled bulk response
               var response = {
                 status: jolokia.status,
                 responseBody: JSON.stringify(bulk),
                 headersOut: jolokia.headersOut,
               };
+
+              req.log("Expected response: " + response.status)
+              req.log(response);
+
               // Override the content length that changed while re-assembling the bulk response
               response.headersOut['Content-Length'] = response.responseBody.length;
               return response;
+            })
+            .catch(error => {
+              req.log("ERROR ERROR ERROR");
+              req.log(error);
+              response(error);
             });
         });
       });
     } else {
       mbeanListRequired = RBAC.isMBeanListRequired(request);
       return getPodIP().then(podIP => {
+        req.log("Non array called podIP")
         return (mbeanListRequired ? listMBeans(podIP) : Promise.resolve()).then(mbeans => {
+          req.log("no mbean list required")
           var rbac = RBAC.check(request, role);
           if (!rbac.allowed) {
             return reject(403, rbac.reason);
@@ -302,6 +367,7 @@ function proxyJolokiaAgent(req) {
           if (rbac.intercepted) {
             return Promise.resolve({ status: rbac.response.status, responseBody: JSON.stringify(rbac.response) });
           }
+          req.log("XXX callJolokiaAgent using :" + req.requestBody)
           return callJolokiaAgent(podIP, req.requestBody);
         });
       });
@@ -309,12 +375,19 @@ function proxyJolokiaAgent(req) {
   }
 
   return (isRbacEnabled ? proxyJolokiaAgentWithRbac() : proxyJolokiaAgentWithoutRbac())
-    .then(response)
+    .then(res => {
+      req.log("=== ALL GOOD. RETURNING TO MOTHER SHIP ===");
+      return response(res)
+    })
     .catch(error => {
+      req.log("CATCH AT FOOT OF MAIN NGINX FUNCTION");
       if (error.status) {
+        req.log("Catch error at foot of main nginx function: " + error.status);
+        req.log(error);
         response(error);
       } else {
-        req.return(502, error);
+        req.log(error);
+        req.return(502, new Error('nginx jolokia gateway error', { cause: error}));
       }
     });
 }

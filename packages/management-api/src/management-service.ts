@@ -81,9 +81,13 @@ export class ManagementService extends EventEmitter {
   }
 
   private emitUpdate(uid: string, fireUpdate: boolean) {
+    console.log(`Firing update for uid ${uid}: ${fireUpdate}`)
     this.uidQueue.delete(uid)
 
+    console.log("The UID Query after deletion: ")
+    console.log(this.uidQueue)
     if (fireUpdate && this.uidQueue.size === 0) {
+      console.log("Firing update for management service")
       this.emit(MgmtActions.UPDATED)
     }
   }
@@ -117,7 +121,9 @@ export class ManagementService extends EventEmitter {
         }
       } catch (error) {
         log.error(new Error(`Cannot access jolokia url at ${mPod.jolokiaPath}`, { cause: error }))
+        log.error(error)
         mPod.management.status.error = true
+        console.log("Error being thrown but emitting update anyway")
         this.emitUpdate(uid, fingerprint === this.fingerprint(mPod.management))
         continue
       }

@@ -9,3 +9,4 @@ resources:
 
 patchesStrategicMerge:
 - patch-deployment.yml
+namespace: hawtio-dev

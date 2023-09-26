@@ -3,8 +3,7 @@ import $ from 'jquery'
 import { log } from './globals'
 import jsonpath from 'jsonpath'
 import { func, is, object } from 'superstruct'
-import { KubePod, k8Service, ObjectMeta, PodStatus, joinPaths, PodSpec } from '@hawtio/online-kubernetes-api'
-import { k8Api } from '@hawtio/online-kubernetes-api'
+import { k8Api, KubePod, k8Service, ObjectMeta, PodStatus, joinPaths, PodSpec, isString, isObject } from '@hawtio/online-kubernetes-api'
 
 const DEFAULT_JOLOKIA_OPTIONS: IOptions = {
   method: 'POST',
@@ -130,9 +129,24 @@ export class ManagedPod {
     const namespace = pod.metadata?.namespace
     const name = pod.metadata?.name
     const protocol = ManagedPod.getAnnotation(pod, 'hawt.io/protocol', 'https')
-    const jolokiaPath = ManagedPod.getAnnotation(pod, 'hawt.io/jolokiaPath', '/proxy/jolokia/')
-    const path = `/api/v1/namespaces/${namespace}/pods/${protocol}:${name}:${port}${jolokiaPath}`
-    return joinPaths(k8Api.masterUri(), path)
+    const jolokiaPath = ManagedPod.getAnnotation(pod, 'hawt.io/jolokiaPath', '/jolokia/')
+    const path = `/management/namespaces/${namespace}/pods/${protocol}:${name}:${port}${jolokiaPath}`
+    return joinPaths(window.location.origin, path)
+
+    // TODO:
+    //
+    // This was originally /management/...
+    // This location is governed by the nginx conf location of /management
+    // which passes the thing to the jolokiaAgent client
+    // So ... ... ...
+    // Do we add a similar rule and keep this as /master/api/v1.... or
+    // do we change this to /managment.
+    // If 1 then have to add location rule
+    // If 2 then have to add alias to devServer
+    //
+    // ... ... ...
+    // Trying out 2 and seeing if something different happens
+    // ... bump-in-road -> docker run out of space
   }
 
   private extractPort(pod: KubePod): number {
@@ -175,7 +189,11 @@ export class ManagedPod {
 
   async probeJolokiaUrl(): Promise<string> {
     return new Promise<string>((resolve, reject) => {
-      $.ajax({url: this.jolokiaPath, method: 'GET'})
+      $.ajax({
+          url: `${this.jolokiaPath}version`,
+          method: 'GET',
+          dataType: 'text'
+        })
         .done((data: string, textStatus: string, xhr: JQueryXHR) => {
           if (xhr.status !== 200) {
             console.log("Status is not 200: " + xhr.status)
@@ -184,6 +202,15 @@ export class ManagedPod {
           }
 
           try {
+            if (isString(data)) {
+              console.log("DATA IS DEFINITELY A STRING")
+            } else if (isObject(data)) {
+              console.log("DATA IS DEFINITELY AN OBJECT")
+            } else {
+              console.log("DATA IS DEFINITELY SOMETHING ELSE")
+            }
+
+            console.log(data)
             const resp = JSON.parse(data)
             if ('error' in resp) {
               throw new Error(resp.error)
@@ -203,7 +230,11 @@ export class ManagedPod {
             return
           }
         })
-        .fail((xhr: JQueryXHR) => {
+        .fail((xhr: JQueryXHR, _: string, error: string) => {
+          if (error) {
+            reject(`Jolokia Probe Error: ${error}`)
+          }
+
           reject(`${xhr.status} ${xhr.statusText}`)
         })
     })
