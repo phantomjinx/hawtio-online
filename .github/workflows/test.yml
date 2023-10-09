@@ -5,12 +5,14 @@ on:
     branches:
       - main
       - '1.x-redhat-7.x'
+      - '1.x-redhat-7.12.x'
     paths-ignore:
       - "**.md"
   push:
     branches:
       - main
       - '1.x-redhat-7.x'
+      - '1.x-redhat-7.12.x'
     paths-ignore:
       - "**.md"
 

@@ -9,8 +9,31 @@ var fs = require('fs');
 
 var listMBeans = fs.readFileSync('test.listMBeans.json');
 
+function report(code, expectedCode, message) {
+  console.log('code:', code);
+  console.log('message:', message, "\n");
+
+  if (code !== expectedCode)
+    throw new Error(`Failure: Return status code ${code} does not match expected ${expectedCode}`);
+}
+
+function callGateway(input) {
+  var options = {
+    return: (code, message) => {
+      report(code, input.expectedCode, message);
+    },
+    log: (message) => {
+      console.log(message);
+    }
+  }
+
+  var payload = Object.assign(input, options);
+  return gateway.proxyJolokiaAgent(payload);
+}
+
 function requestWithViewerRoleTest() {
-  return gateway.proxyJolokiaAgent({
+  console.log('=== requestWithViewerRoleTest');
+  return callGateway({
     uri: '/management/namespaces/test/pods/https:pod:443/remaining',
     requestBody: JSON.stringify({
       type: 'exec',
@@ -19,14 +42,13 @@ function requestWithViewerRoleTest() {
     }),
     headersOut: {},
     subrequest: doWithViewerRole,
-    return: (code, message) => {
-      console.log('code:', code, 'message:', message);
-    },
+    expectedCode: 200
   });
 }
 
 function bulkRequestWithViewerRoleTest() {
-  return gateway.proxyJolokiaAgent({
+  console.log('=== bulkRequestWithViewerRoleTest');
+  return callGateway({
     uri: '/management/namespaces/test/pods/https:pod:443/remaining',
     requestBody: JSON.stringify([
       {
@@ -42,14 +64,13 @@ function bulkRequestWithViewerRoleTest() {
     ]),
     headersOut: {},
     subrequest: doWithViewerRole,
-    return: (code, message) => {
-      console.log('code:', code, 'message:', message);
-    },
+    expectedCode: 200
   });
 }
 
 function requestOperationWithArgumentsAndNoRoleTest() {
-  return gateway.proxyJolokiaAgent({
+  console.log('=== requestOperationWithArgumentsAndNoRoleTest');
+  return callGateway({
     uri: '/management/namespaces/test/pods/https:pod:443/remaining',
     requestBody: JSON.stringify({
       type: 'exec',
@@ -61,14 +82,13 @@ function requestOperationWithArgumentsAndNoRoleTest() {
     }),
     headersOut: {},
     subrequest: doWithViewerRole,
-    return: (code, message) => {
-      console.log('code:', code, 'message:', message);
-    },
+    expectedCode: 403 // viewer not allowed to uninstall
   });
 }
 
 function requestOperationWithArgumentsAndViewerRoleTest() {
-  return gateway.proxyJolokiaAgent({
+  console.log('=== requestOperationWithArgumentsAndViewerRoleTest');
+  return callGateway({
     uri: '/management/namespaces/test/pods/https:pod:443/remaining',
     requestBody: JSON.stringify({
       type: 'exec',
@@ -81,14 +101,13 @@ function requestOperationWithArgumentsAndViewerRoleTest() {
     }),
     headersOut: {},
     subrequest: doWithViewerRole,
-    return: (code, message) => {
-      console.log('code:', code, 'message:', message);
-    },
+    expectedCode: 403 // viewer not allowed to exec an operation
   });
 }
 
 function searchCamelRoutesTest() {
-  return gateway.proxyJolokiaAgent({
+  console.log('=== searchCamelRoutesTest');
+  return callGateway({
     uri: '/management/namespaces/test/pods/https:pod:443/remaining',
     requestBody: JSON.stringify({
       type: 'search',
@@ -96,14 +115,13 @@ function searchCamelRoutesTest() {
     }),
     headersOut: {},
     subrequest: doWithViewerRole,
-    return: (code, message) => {
-      console.log('code:', code, 'message:', message);
-    },
+    expectedCode: 200
   });
 }
 
 function searchRbacMBeanTest() {
-  return gateway.proxyJolokiaAgent({
+  console.log('=== searchRbacMBeanTest');
+  return callGateway({
     uri: '/management/namespaces/test/pods/https:pod:443/remaining',
     requestBody: JSON.stringify({
       type: 'search',
@@ -111,14 +129,13 @@ function searchRbacMBeanTest() {
     }),
     headersOut: {},
     subrequest: doWithViewerRole,
-    return: (code, message) => {
-      console.log('code:', code, 'message:', message);
-    },
+    expectedCode: 200
   });
 }
 
 function bulkRequestWithInterceptionTest() {
-  return gateway.proxyJolokiaAgent({
+  console.log('=== bulkRequestWithInterceptionTest');
+  return callGateway({
     uri: '/management/namespaces/test/pods/https:pod:443/remaining',
     requestBody: JSON.stringify([
       {
@@ -137,14 +154,13 @@ function bulkRequestWithInterceptionTest() {
     ]),
     headersOut: {},
     subrequest: doWithViewerRole,
-    return: (code, message) => {
-      console.log('code:', code, 'message:', message);
-    },
+    expectedCode: 200
   });
 }
 
 function canInvokeSingleOperationTest() {
-  return gateway.proxyJolokiaAgent({
+  console.log('=== canInvokeSingleOperationTest');
+  return callGateway({
     uri: '/management/namespaces/test/pods/https:pod:443/remaining',
     requestBody: JSON.stringify({
       'type': 'exec',
@@ -157,14 +173,13 @@ function canInvokeSingleOperationTest() {
     }),
     headersOut: {},
     subrequest: doWithViewerRole,
-    return: (code, message) => {
-      console.log('code:', code, 'message:', message);
-    },
+    expectedCode: 200
   });
 }
 
 function canInvokeSingleAttributeTest() {
-  return gateway.proxyJolokiaAgent({
+  console.log('=== canInvokeSingleAttributeTest');
+  return callGateway({
     uri: '/management/namespaces/test/pods/https:pod:443/remaining',
     requestBody: JSON.stringify({
       'type': 'exec',
@@ -177,14 +192,13 @@ function canInvokeSingleAttributeTest() {
     }),
     headersOut: {},
     subrequest: doWithViewerRole,
-    return: (code, message) => {
-      console.log('code:', code, 'message:', message);
-    },
+    expectedCode: 200
   });
 }
 
 function canInvokeMapTest() {
-  return gateway.proxyJolokiaAgent({
+  console.log('=== canInvokeMapTest');
+  return callGateway({
     uri: '/management/namespaces/test/pods/https:pod:443/remaining',
     requestBody: JSON.stringify({
       'type': 'exec',
@@ -208,9 +222,7 @@ function canInvokeMapTest() {
     }),
     headersOut: {},
     subrequest: doWithViewerRole,
-    return: (code, message) => {
-      console.log('code:', code, 'message:', message);
-    },
+    expectedCode: 200
   });
 }
 
