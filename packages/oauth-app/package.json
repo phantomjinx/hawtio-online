@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@hawtio/online-oauth": "workspace:*",
-    "@hawtio/react": "^0.6.1",
+    "@hawtio/react": "^0.9.1",
     "@patternfly/react-core": "^4.276.8",
     "@patternfly/react-styles": "^4.92.6",
     "@patternfly/react-table": "^4.113.0",
@@ -23,7 +23,7 @@
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.16.0",
-    "typescript": "^4.9.5",
+    "typescript": "^5.2.2",
     "web-vitals": "^3.4.0"
   },
   "devDependencies": {
@@ -61,6 +61,6 @@
   "packageManager": "yarn@3.6.0",
   "engines": {
     "yarn": ">=3.6.0",
-    "node": ">=16"
+    "node": ">=18"
   }
 }
