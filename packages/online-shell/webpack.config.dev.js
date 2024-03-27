@@ -106,6 +106,32 @@ module.exports = () => {
                */
               console.log('Unauthorized Error detected: removing www-authenticate header')
               delete proxyRes.headers['www-authenticate']
+              return
+            }
+
+            /*
+             * Request method
+             */
+            const method = req.method?.toUpperCase() ?? ''
+
+            /*
+             * RegExp according to kubernetes namespace specification
+             */
+            const podRegExp = /.*\/namespaces\/[0-9a-z][0-9a-z-]+[0-9a-z]\/pods$/
+
+            if (method === 'GET' && req.url.match(podRegExp)) {
+              /*
+               * Override the response write function to
+               * sanitize any properties in the message body
+               * which contain IP addresses
+               */
+              const _write = res.write
+              res.write = (chunk) => {
+                chunk instanceof Buffer && (chunk = chunk.toString())
+                chunk = chunk.replace(/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/g, '<sanitized>')
+                chunk = Buffer.from(chunk, 'utf-8')
+                _write.call(res, chunk)
+              }
             }
           },
         },

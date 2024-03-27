@@ -38,7 +38,7 @@ server {
     proxy_buffers                 ${NGINX_PROXY_BUFFERS};
 
     # For debugging location rewrite
-    #rewrite_log on;
+    rewrite_log on;
 
     if ($request_method !~ ^(GET|HEAD|POST)$ ) {
       return 444;
@@ -84,11 +84,19 @@ server {
         gzip_static on;
     }
 
-    # Kubernetes master API reverse proxying
+    # External Kubernetes master API reverse proxying
+    # Passes to /internalmaster then sanitizes the response
     location /master {
-        add_header                    location-rule MASTER always;
+        add_header                    location-pre-rule MASTER always;
+        js_content                    gateway.proxyMasterApi;
+    }
+
+    # Internal Kubernetes master API reverse proxying
+    # Called by /master to fetch the raw data
+    location /internalmaster {
+        internal;
         proxy_pass                    https://kubernetes.default/;
-        rewrite                       /master/(.*) /$1 break;
+        rewrite                       /internalmaster/(.*) /$1 break;
         proxy_pass_request_headers    on;
         proxy_pass_request_body       on;
         proxy_redirect                off;

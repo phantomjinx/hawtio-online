@@ -2,6 +2,10 @@
 // https://github.com/nginx/njs
 // https://github.com/xeioex/njs-examples
 
+/*
+ * Note: To debug, use req.error('...') to see logging in pod logs
+ */
+
 import RBAC from 'rbac.js';
 import jsyaml from 'js-yaml.js';
 import jwt_decode from 'jwt-decode.js';
@@ -13,13 +17,70 @@ RBAC.initACL(jsyaml.safeLoad(fs.readFileSync(process.env['HAWTIO_ONLINE_RBAC_ACL
 var isRbacEnabled = typeof process.env['HAWTIO_ONLINE_RBAC_ACL'] !== 'undefined';
 var useForm = process.env['HAWTIO_ONLINE_AUTH'] === 'form';
 
-export default { decodeRedirectUri, proxyJolokiaAgent };
+export default { decodeRedirectUri, proxyJolokiaAgent, proxyMasterApi };
 
 function decodeRedirectUri(r) {
   return decodeURIComponent(r.args.redirect_uri);
 }
 
+function proxyMasterApi(req) {
+
+  req.error('proxyMasterApi: ' + req.uri);
+
+  function masterResponse(res) {
+    for (var header in res.headersOut) {
+      req.headersOut[header] = res.headersOut[header];
+    }
+
+    req.error('XXX - Response from /internalmaster');
+
+    /*
+     * Request method
+     */
+    var method = req.method.toUpperCase() || '';
+    req.error(`XXX - Method: ${method}`);
+
+    /*
+     * RegExp according to kubernetes namespace specification
+     */
+    var podRegExp = new RegExp('.*\/namespaces\/[0-9a-z][0-9a-z-]+[0-9a-z]\/pods$', '');
+    req.error(`XXX - Test for RegExp: ${req.uri}`);
+    req.error(`XXX - Test Result: ${req.uri.match(podRegExp)}`);
+
+    if (method === 'GET' && req.uri.match(podRegExp)) {
+      req.error('XXX - Inside GET match');
+
+      req.error(res);
+
+//       /*
+//        * Override the response write function to
+//        * sanitize any properties in the message body
+//        * which contain IP addresses
+//        */
+      var responseBody = res.responseBody;
+      req.error('XXX - PRE ' + responseBody);
+
+      responseBody = responseBody.replace(/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/g, '<sanitized>');
+      responseBody = responseBody.replace(/ip-[0-9-]+/g, '<sanitized');
+
+      req.error('XXX - POST ' + responseBody);
+      res.responseBody = responseBody;
+
+      req.error('XXX - RES responseBody ' + responseBody);
+    }
+
+    req.return(res.status, res.responseBody);
+  }
+
+  var internalmaster = req.uri.replace('/master', '/internalmaster');
+  req.error('internalmaster: ' + internalmaster);
+
+  return req.subrequest(internalmaster)
+    .then(masterResponse);
+}
+
 function proxyJolokiaAgent(req) {
+
   var parts = req.uri.match(/\/management\/namespaces\/(.+)\/pods\/(http|https):(.+):(\d+)\/(.*)/);
   if (!parts) {
     req.return(404);
