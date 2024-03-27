@@ -129,6 +129,7 @@ module.exports = () => {
               res.write = (chunk) => {
                 chunk instanceof Buffer && (chunk = chunk.toString())
                 chunk = chunk.replace(/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/g, '<sanitized>')
+                chunk = chunk.replace(/ip-[0-9-]+/g, '<sanitized');
                 chunk = Buffer.from(chunk, 'utf-8')
                 _write.call(res, chunk)
               }

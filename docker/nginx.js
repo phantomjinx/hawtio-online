@@ -27,55 +27,93 @@ function proxyMasterApi(req) {
 
   req.error('proxyMasterApi: ' + req.uri);
 
+  req.error(`XXX - REQUEST HEADERS`);
+  for (var header in req.headersIn) {
+    req.error(`IN  ${header}: ${req.headersIn[header]}`);
+  }
+  for (var header in req.headersOut) {
+    req.error(`OUT ${header}: ${req.headersOut[header]}`);
+  }
+
+  if (req.args) {
+    for (var arg in req.args) {
+      req.error(`ARG ${arg} : ${req.args[arg]}`);
+    }
+  }
+
   function masterResponse(res) {
     for (var header in res.headersOut) {
       req.headersOut[header] = res.headersOut[header];
     }
 
+    req.error(`XXX - RESPONSE HEADERS`);
+    for (var header in req.headersIn) {
+      req.error(`IN  ${header}: ${req.headersIn[header]}`);
+    }
+    for (var header in req.headersOut) {
+      req.error(`OUT ${header}: ${req.headersOut[header]}`);
+    }
+
     req.error('XXX - Response from /internalmaster');
 
-    /*
-     * Request method
-     */
+//     /*
+//      * Request method
+//      */
     var method = req.method.toUpperCase() || '';
     req.error(`XXX - Method: ${method}`);
+    req.error(`XXX - Status: ${res.status}`);
 
-    /*
-     * RegExp according to kubernetes namespace specification
-     */
-    var podRegExp = new RegExp('.*\/namespaces\/[0-9a-z][0-9a-z-]+[0-9a-z]\/pods$', '');
-    req.error(`XXX - Test for RegExp: ${req.uri}`);
-    req.error(`XXX - Test Result: ${req.uri.match(podRegExp)}`);
-
-    if (method === 'GET' && req.uri.match(podRegExp)) {
-      req.error('XXX - Inside GET match');
-
-      req.error(res);
-
-//       /*
-//        * Override the response write function to
-//        * sanitize any properties in the message body
-//        * which contain IP addresses
-//        */
-      var responseBody = res.responseBody;
-      req.error('XXX - PRE ' + responseBody);
-
-      responseBody = responseBody.replace(/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/g, '<sanitized>');
-      responseBody = responseBody.replace(/ip-[0-9-]+/g, '<sanitized');
-
-      req.error('XXX - POST ' + responseBody);
-      res.responseBody = responseBody;
-
-      req.error('XXX - RES responseBody ' + responseBody);
-    }
+//
+//     /*
+//      * RegExp according to kubernetes namespace specification
+//      */
+//     var podRegExp = new RegExp('.*\/namespaces\/[0-9a-z][0-9a-z-]+[0-9a-z]\/pods$', '');
+//     req.error(`XXX - Test for RegExp: ${req.uri}`);
+//     req.error(`XXX - Test Result: ${req.uri.match(podRegExp)}`);
+//
+//     if (method === 'GET' && req.uri.match(podRegExp)) {
+//       req.error('XXX - Inside GET match');
+//
+// //       /*
+// //        * Override the response write function to
+// //        * sanitize any properties in the message body
+// //        * which contain IP addresses
+// //        */
+//       var isBuffer = (res.responseBody instanceof Buffer);
+//       req.error(`XXX - isBuffer: ${isBuffer}`);
+//
+//       req.error(`XXX - Response Body type: ${typeof res.responseBody}`);
+//
+//       for (var prop in res) {
+//         req.error(`prop: ${prop}`);
+//       }
+//
+//       // var responseBody = isBuffer ? res.responseBody.toString() : res.responseBody;
+//       //
+//       // req.error('XXX - PRE ' + responseBody);
+//       // responseBody = responseBody.replace(/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/g, '<sanitized>');
+//       // responseBody = responseBody.replace(/ip-[0-9-]+/g, '<sanitized');
+//       //
+//       // res.responseBody = isBuffer ? Buffer.from(responseBody, 'utf-8') : responseBody;
+//       // req.error('XXX - POST ' + res.responseBody);
+//     }
 
     req.return(res.status, res.responseBody);
   }
 
-  var internalmaster = req.uri.replace('/master', '/internalmaster');
-  req.error('internalmaster: ' + internalmaster);
+  var proxyuri = req.uri.replace('/master', '/podmaster');
+  req.error('proxy uri: ' + proxyuri);
 
-  return req.subrequest(internalmaster)
+  if (req.headersIn['upgrade'] === 'websocket') {
+    req.error('Redirecting wss request');
+
+    proxyuri = proxyuri + '?' + 'watch=true&' + 'pgr=5';
+    req.internalRedirect();
+    return;
+  }
+
+  var options = req.args ? { args: req.args } : {};
+  return req.subrequest(proxyuri, options)
     .then(masterResponse);
 }
 

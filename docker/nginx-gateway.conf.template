@@ -40,6 +40,9 @@ server {
     # For debugging location rewrite
     rewrite_log on;
 
+    # Log the subrequests
+    log_subrequest on;
+
     if ($request_method !~ ^(GET|HEAD|POST)$ ) {
       return 444;
     }
@@ -84,19 +87,30 @@ server {
         gzip_static on;
     }
 
-    # External Kubernetes master API reverse proxying
-    # Passes to /internalmaster then sanitizes the response
-    location /master {
-        add_header                    location-pre-rule MASTER always;
-        js_content                    gateway.proxyMasterApi;
+    location ~* /master.*/pods$ {
+      add_header                    location-rule MASTER-PODS always;
+      js_content                    gateway.proxyMasterApi;
     }
 
-    # Internal Kubernetes master API reverse proxying
-    # Called by /master to fetch the raw data
-    location /internalmaster {
-        internal;
+    location /podmaster {
+        add_header                    location-rule POD-MASTER always;
         proxy_pass                    https://kubernetes.default/;
-        rewrite                       /internalmaster/(.*) /$1 break;
+        rewrite                       /podmaster/(.*) /$1 break;
+        proxy_pass_request_headers    on;
+        proxy_pass_request_body       on;
+        proxy_redirect                off;
+        proxy_ssl_verify              on;
+        proxy_ssl_trusted_certificate /var/run/secrets/kubernetes.io/serviceaccount/ca.crt;
+        proxy_ssl_session_reuse       on;
+        proxy_http_version            1.1;
+        proxy_set_header Upgrade      $http_upgrade;
+        proxy_set_header Connection   $connection_upgrade;
+    }
+
+    location /master {
+        add_header                    location-rule MASTER always;
+        proxy_pass                    https://kubernetes.default/;
+        rewrite                       /master/(.*) /$1 break;
         proxy_pass_request_headers    on;
         proxy_pass_request_body       on;
         proxy_redirect                off;
