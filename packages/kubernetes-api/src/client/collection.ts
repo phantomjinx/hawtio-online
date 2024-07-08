@@ -31,6 +31,8 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
   private _isOpenshift: boolean
   private _oAuthToken: string
 
+  private _continueRef: string|null = null
+
   constructor(private _options: KOptions) {
     this._isOpenshift = k8Api.isOpenshift
     this._oAuthToken = k8Api.oAuthProfile.getToken()
@@ -44,6 +46,7 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
     } else {
       this._path = joinPaths(pref, this.kind)
     }
+
     log.debug("Creating new collection for kind: '", this.kind, "' path: '", this._path, "'")
 
     this.handler = new WSHandlerImpl(this)
@@ -70,6 +73,14 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
       url = new URL(answer)
     } else {
       url = new URL(joinPaths(k8Api.masterUri(), this._path))
+    }
+
+    if (_options.nsLimit !== undefined) {
+      this._searchParams.append('limit', `${_options.nsLimit}`)
+    }
+
+    if (_options.continueRef !== undefined) {
+      this._searchParams.append('continue', `${_options.continueRef}`)
     }
 
     if (this.options.labelSelector) {

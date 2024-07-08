@@ -31,6 +31,12 @@ export class KubernetesService extends EventEmitter {
   private projects_client: Client<KubeProject> | null = null
   private pods_clients: { [key: string]: Client<KubePod> } = {}
 
+  private _nsLimit = 7
+
+  private projectBookmark: ProjectBookmark = {
+    podsRemaining: this._nsLimit
+  }
+
   async initialize(): Promise<boolean> {
     if (this._initialized) return this._initialized
 
@@ -67,7 +73,7 @@ export class KubernetesService extends EventEmitter {
       log.warn("No namespace can be found - defaulting to 'default'")
       namespace = 'default'
     }
-    const pods_client = clientFactory.create<KubePod>({ kind: WatchTypes.PODS, namespace: namespace })
+    const pods_client = clientFactory.create<KubePod>({ kind: WatchTypes.PODS, namespace: namespace, nsLimit: this._nsLimit })
     const pods_watch = pods_client.watch(pods => {
       this._loading--
       this.pods.splice(0, this.pods.length) // clear the array
@@ -86,7 +92,7 @@ export class KubernetesService extends EventEmitter {
     const labelSelector = pathGet(hawtConfig, ['online', 'projectSelector']) as string
     const projects_client = clientFactory.create<KubeProject>({
       kind: kindToWatch,
-      labelSelector: labelSelector,
+      labelSelector: labelSelector
     })
 
     this._loading++
@@ -94,8 +100,47 @@ export class KubernetesService extends EventEmitter {
       // subscribe to pods update for new projects
       let filtered = projects.filter(project => !this.projects.some(p => p.metadata?.uid === project.metadata?.uid))
       for (const project of filtered) {
+
+        //
+        // If the project has already been seen by the bookmark
+        // and is not the current project that the continue ref
+        // is located in then ignore the project
+        //
+        if (this.projectBookmark.hasSeen(project) && ! this.projectBookmark.isCurrent(project))
+          continue
+
         this._loading++
-        const pods_client = clientFactory.create<KubePod>({ kind: WatchTypes.PODS, namespace: project.metadata?.name })
+
+        const podOptions = {
+          kind: WatchTypes.PODS,
+          namespace: project.metadata?.name,
+          nsLimit: this.projectBookmark.podsRemaining
+        }
+
+        if (this.projectBookmark.isCurrent(project) && this.projectBookmark.continueRef !== null) {
+          //
+          // If the bookmark contains a continueRef then add it in
+          // to retrieve the rest of the pods in the project
+          //
+          podOptions.continueRef = this.projectBookmark.continueRef
+        }
+
+        const pods_client = clientFactory.create<KubePod>(podOptions)
+
+        if (pods_client.continueRef !== null) {
+          //
+          // Limit has been reached halfway through a project
+          // so store the current project and the continue reference
+          //
+          this.projectBookmark.current = project.metadata?.uid
+          this.projectBookmark.continueRef = pods_client.continueRef
+        } else {
+          //
+          // All pods in this project have been returned
+          //
+          this.projectBookmark.seen(project)
+        }
+
         const pods_watch = pods_client.watch(pods => {
           this._loading--
           const others = this.pods.filter(pod => pod.metadata?.namespace !== project.metadata?.name)
@@ -117,6 +162,12 @@ export class KubernetesService extends EventEmitter {
 
             this.pods.push(jpod)
           }
+
+          //
+          // Calculate how many pods are left to list
+          //
+          const remaining = this._nsLimit - this.pods.length
+          this.projectBookmark.podsRemaining = remaining < 0 ? 0 : remaining
 
           this.emit(K8Actions.CHANGED)
         })
@@ -176,6 +227,22 @@ export class KubernetesService extends EventEmitter {
 
   get jolokiaPortQuery() {
     return this._jolokiaPortQuery
+  }
+
+  get projectLimit() {
+    return this._projectLimit
+  }
+
+  set projectLimit(limit: number) {
+    this._projectLimit = limit
+  }
+
+  get namespaceLimit() {
+    return this._nsLimit
+  }
+
+  set namespaceLimit(limit: number) {
+    this._nsLimit = limit
   }
 
   is(mode: HawtioMode): boolean {

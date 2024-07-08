@@ -27,6 +27,8 @@ export interface KOptions extends Record<string, unknown> {
   success?: (objs: KubeObject[]) => void
   error?: ErrorDataCallback
   urlFunction?: (options: KOptions) => string
+  projectLimit?: number
+  nsLimit?: number
 }
 
 export type ProcessDataCallback<T extends KubeObject> = (data: T[]) => void
