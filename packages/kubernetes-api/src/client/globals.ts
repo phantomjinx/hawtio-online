@@ -6,6 +6,7 @@ export const log = Logger.get('hawtio-online-k8s-objects')
 
 // Allow clients to add other types to force polling under whatever circumstances
 export const pollingOnly = [WatchTypes.IMAGE_STREAM_TAGS]
+export const POLLING_INTERVAL = 15000
 
 export const UNKNOWN_VALUE = '<unknown>'
 export const NO_KIND = 'No kind in supplied options'
@@ -27,8 +28,8 @@ export interface KOptions extends Record<string, unknown> {
   success?: (objs: KubeObject[]) => void
   error?: ErrorDataCallback
   urlFunction?: (options: KOptions) => string
-  projectLimit?: number
   nsLimit?: number
+  continueRef?: string
 }
 
 export type ProcessDataCallback<T extends KubeObject> = (data: T[]) => void
@@ -40,6 +41,7 @@ export interface Collection<T extends KubeObject> {
   kind: string
   wsURL: string
   restURL: string
+  continueRef: string|null
   namespace?: string
   connected: boolean
   oAuthToken: string

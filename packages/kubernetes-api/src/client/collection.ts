@@ -14,6 +14,7 @@ import {
   WSHandler,
   ProcessDataCallback,
   ErrorDataCallback,
+  POLLING_INTERVAL,
 } from './globals'
 import { ObjectListImpl } from './object-list'
 import { WSHandlerImpl } from './ws-handler'
@@ -62,6 +63,10 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
     return this._options
   }
 
+  get continueRef(): string|null {
+    return this._continueRef
+  }
+
   private get _restUrl() {
     let url
 
@@ -75,12 +80,14 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
       url = new URL(joinPaths(k8Api.masterUri(), this._path))
     }
 
-    if (_options.nsLimit !== undefined) {
-      this._searchParams.append('limit', `${_options.nsLimit}`)
+    if (this.options.nsLimit !== undefined) {
+      console.log(`Appending a limit parameter to rest url`)
+      url.searchParams.append('limit', `${this.options.nsLimit}`)
     }
 
-    if (_options.continueRef !== undefined) {
-      this._searchParams.append('continue', `${_options.continueRef}`)
+    if (this.options.continueRef !== undefined) {
+      console.log(`Appending a continue parameter to rest url`)
+      url.searchParams.append('continue', this.options.continueRef)
     }
 
     if (this.options.labelSelector) {
@@ -223,15 +230,20 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
 
   // continually get updates
   watch(cb: ProcessDataCallback<T>): ProcessDataCallback<T> {
+    console.log(`Watching ${this.restURL}`)
+
     if (this.list.initialized) {
+      console.log(`intialized list for ${this.restURL}`)
+
       setTimeout(() => {
         log.debug(this.kind, 'passing existing objects:', this.list.objects)
         cb(this.list.objects)
-      }, 10)
+      }, POLLING_INTERVAL)
     }
     log.debug(this.kind, 'adding watch callback:', cb)
 
     this.list.doOn(WatchActions.ANY, (data: T[]) => {
+      console.log(`Watching all actions for ${this.restURL}`)
       log.debug(this.kind, 'got data:', data)
       cb(data)
     })

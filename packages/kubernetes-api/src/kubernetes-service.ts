@@ -11,13 +11,60 @@ import {
 import jsonpath from 'jsonpath'
 import { WatchTypes } from './model'
 import { pathGet } from './utils'
-import { clientFactory, Collection, log, ProcessDataCallback } from './client'
+import { clientFactory, Collection, KOptions, log, ProcessDataCallback } from './client'
 import { K8Actions, KubeObject, KubePod, KubeProject } from './globals'
 import { k8Api } from './init'
 
 export interface Client<T extends KubeObject> {
   collection: Collection<T>
   watch: ProcessDataCallback<T>
+}
+
+class ProjectBookmark {
+
+  private seenProjects = new Set()
+  private _current: string = ''
+  private _continueRef: string = ''
+
+  constructor(private _podsRemaining: number) {}
+
+  hasSeen(project: KubeProject): boolean {
+    return this.seenProjects.has(project.metadata?.uid)
+  }
+
+  seen(project: KubeProject) {
+    this.seenProjects.add(project.metadata?.uid)
+  }
+
+  isCurrent(project: KubeProject): boolean {
+    return this._current === project.metadata?.uid
+  }
+
+  set current(project: KubeProject) {
+    this._current = project.metadata?.uid ?? ''
+  }
+
+  get continueRef(): string {
+    return this._continueRef
+  }
+
+  set continueRef(reference: string) {
+    this._continueRef = reference
+  }
+
+  get podsRemaining(): number {
+    return this._podsRemaining
+  }
+
+  reducePods(pods: number) {
+    console.log(`Reducing pods by ${pods}`)
+    const r = this._podsRemaining - pods
+    this._podsRemaining = r < 0 ? 0 : r
+  }
+
+  print(): string {
+    return `seenProjects: ${this.seenProjects.toString()}, current: ${this._current},  continueRef: ${this.continueRef}`
+  }
 }
 
 export class KubernetesService extends EventEmitter {
@@ -31,11 +78,9 @@ export class KubernetesService extends EventEmitter {
   private projects_client: Client<KubeProject> | null = null
   private pods_clients: { [key: string]: Client<KubePod> } = {}
 
-  private _nsLimit = 7
+  private _nsLimit = 3
 
-  private projectBookmark: ProjectBookmark = {
-    podsRemaining: this._nsLimit
-  }
+  private projectBookmark: ProjectBookmark = new ProjectBookmark(this._nsLimit)
 
   async initialize(): Promise<boolean> {
     if (this._initialized) return this._initialized
@@ -109,9 +154,17 @@ export class KubernetesService extends EventEmitter {
         if (this.projectBookmark.hasSeen(project) && ! this.projectBookmark.isCurrent(project))
           continue
 
+        //
+        // Reached the limit of pods to return
+        //
+        if (this.projectBookmark.podsRemaining === 0) {
+          console.log(this.projectBookmark.print())
+          continue
+        }
+
         this._loading++
 
-        const podOptions = {
+        const podOptions: KOptions = {
           kind: WatchTypes.PODS,
           namespace: project.metadata?.name,
           nsLimit: this.projectBookmark.podsRemaining
@@ -132,7 +185,7 @@ export class KubernetesService extends EventEmitter {
           // Limit has been reached halfway through a project
           // so store the current project and the continue reference
           //
-          this.projectBookmark.current = project.metadata?.uid
+          this.projectBookmark.current = project
           this.projectBookmark.continueRef = pods_client.continueRef
         } else {
           //
@@ -166,16 +219,21 @@ export class KubernetesService extends EventEmitter {
           //
           // Calculate how many pods are left to list
           //
-          const remaining = this._nsLimit - this.pods.length
-          this.projectBookmark.podsRemaining = remaining < 0 ? 0 : remaining
+          console.log('Calculating how many pods are left to list')
+          this.projectBookmark.reducePods(this.pods.length)
 
           this.emit(K8Actions.CHANGED)
         })
+
         this.pods_clients[project.metadata?.name as string] = {
           collection: pods_client,
           watch: pods_watch,
         }
+
+        console.log('Calling pods_client.connect()')
         pods_client.connect()
+
+
       }
 
       // handle delete projects
@@ -227,14 +285,6 @@ export class KubernetesService extends EventEmitter {
 
   get jolokiaPortQuery() {
     return this._jolokiaPortQuery
-  }
-
-  get projectLimit() {
-    return this._projectLimit
-  }
-
-  set projectLimit(limit: number) {
-    this._projectLimit = limit
   }
 
   get namespaceLimit() {

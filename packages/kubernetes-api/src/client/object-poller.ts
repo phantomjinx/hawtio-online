@@ -1,6 +1,6 @@
 import { KubeObject, KubeObjectList } from '../globals'
 import { fetchPath, SimpleResponse } from '../utils'
-import { log, WSHandler } from './globals'
+import { log, WSHandler, POLLING_INTERVAL } from './globals'
 import { compare } from './support'
 
 /*
@@ -9,7 +9,7 @@ import { compare } from './support'
 export class ObjectPoller<T extends KubeObject> {
   private _lastFetch: KubeObject[]
   private _connected = false
-  private _interval = 5000
+  private _interval = POLLING_INTERVAL
   private retries = 0
   private tCancel?: NodeJS.Timeout
 
@@ -29,6 +29,7 @@ export class ObjectPoller<T extends KubeObject> {
       return
     }
 
+    console.log('object-poller: Calling doGet')
     fetchPath(this.restURL, {
       success: data => {
         if (!this._connected) {
@@ -90,6 +91,7 @@ export class ObjectPoller<T extends KubeObject> {
   }
 
   start() {
+    console.log(`Starting polling for ${this.restURL}`)
     if (this._connected) {
       return
     }
