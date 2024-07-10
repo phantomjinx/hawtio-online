@@ -1,4 +1,4 @@
-import { k8Service, KubePod } from '@hawtio/online-kubernetes-api'
+import { k8Service, KubePodsByProject, KubePod } from '@hawtio/online-kubernetes-api'
 import {
   DescriptionList,
   DescriptionListDescription,
@@ -11,7 +11,7 @@ import {
 import { TableComposable, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table'
 
 type KubePodsProps = {
-  pods: KubePod[]
+  podsByProject: KubePodsByProject
 }
 
 export const KubernetesPods: React.FunctionComponent<KubePodsProps> = (props: KubePodsProps) => {
@@ -19,50 +19,54 @@ export const KubernetesPods: React.FunctionComponent<KubePodsProps> = (props: Ku
     <Panel isScrollable>
       <PanelMain>
         <PanelMainBody>
-          <TableComposable key='breakpoints' aria-label='Breakpoints table' variant='compact'>
-            <Thead>
-              <Tr>
-                <Th>Name</Th>
-                <Th>Namespace</Th>
-                <Th>Labels</Th>
-                <Th>Annotations</Th>
-                <Th>Status</Th>
-              </Tr>
-            </Thead>
-            <Tbody>
-              {props.pods.map(pod => (
-                <Tr key={pod.metadata?.uid}>
-                  <Td dataLabel='Name'>{pod.metadata?.name}</Td>
-                  <Td dataLabel='Namespace'>{pod.metadata?.namespace}</Td>
-                  <Td dataLabel='Labels'>
-                    <DescriptionList>
-                      {Object.entries(pod.metadata?.labels || {}).map(([key, value]) => {
-                        return (
-                          <DescriptionListGroup key={key}>
-                            <DescriptionListTerm>{key}</DescriptionListTerm>
-                            <DescriptionListDescription>{value as string}</DescriptionListDescription>
-                          </DescriptionListGroup>
-                        )
-                      })}
-                    </DescriptionList>
-                  </Td>
-                  <Td dataLabel='Annotations'>
-                    <DescriptionList>
-                      {Object.entries(pod.metadata?.annotations || {}).map(([key, value]) => {
-                        return (
-                          <DescriptionListGroup key={key}>
-                            <DescriptionListTerm>{key}</DescriptionListTerm>
-                            <DescriptionListDescription>{value as string}</DescriptionListDescription>
-                          </DescriptionListGroup>
-                        )
-                      })}
-                    </DescriptionList>
-                  </Td>
-                  <Td dataLabel='Status'>{k8Service.podStatus(pod)}</Td>
-                </Tr>
-              ))}
-            </Tbody>
-          </TableComposable>
+          {
+            Object.entries(props.podsByProject).map(([project, pods]) => (
+              <TableComposable key={project} aria-label='Pods table' variant='compact'>
+                <Thead>
+                  <Tr>
+                    <Th>Name</Th>
+                    <Th>Namespace</Th>
+                    <Th>Labels</Th>
+                    <Th>Annotations</Th>
+                    <Th>Status</Th>
+                  </Tr>
+                </Thead>
+                <Tbody>
+                  {pods.map(pod => (
+                    <Tr key={pod.metadata?.uid}>
+                      <Td dataLabel='Name'>{pod.metadata?.name}</Td>
+                      <Td dataLabel='Namespace'>{pod.metadata?.namespace}</Td>
+                      <Td dataLabel='Labels'>
+                        <DescriptionList>
+                          {Object.entries(pod.metadata?.labels || {}).map(([key, value]) => {
+                            return (
+                              <DescriptionListGroup key={key}>
+                                <DescriptionListTerm>{key}</DescriptionListTerm>
+                                <DescriptionListDescription>{value as string}</DescriptionListDescription>
+                              </DescriptionListGroup>
+                            )
+                          })}
+                        </DescriptionList>
+                      </Td>
+                      <Td dataLabel='Annotations'>
+                        <DescriptionList>
+                          {Object.entries(pod.metadata?.annotations || {}).map(([key, value]) => {
+                            return (
+                              <DescriptionListGroup key={key}>
+                                <DescriptionListTerm>{key}</DescriptionListTerm>
+                                <DescriptionListDescription>{value as string}</DescriptionListDescription>
+                              </DescriptionListGroup>
+                            )
+                          })}
+                        </DescriptionList>
+                      </Td>
+                      <Td dataLabel='Status'>{k8Service.podStatus(pod)}</Td>
+                    </Tr>
+                  ))}
+                </Tbody>
+              </TableComposable>
+            ))
+          }
         </PanelMainBody>
       </PanelMain>
     </Panel>

@@ -41,7 +41,7 @@ export interface Collection<T extends KubeObject> {
   kind: string
   wsURL: string
   restURL: string
-  continueRef: string|null
+  continueRef: string|undefined
   namespace?: string
   connected: boolean
   oAuthToken: string

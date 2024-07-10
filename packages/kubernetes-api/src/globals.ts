@@ -1,6 +1,6 @@
 import { Logger } from '@hawtio/react'
 import { NamespaceSpec, NamespaceStatus, Pod } from 'kubernetes-types/core/v1'
-import { ObjectMeta } from 'kubernetes-types/meta/v1'
+import { ListMeta, ObjectMeta } from 'kubernetes-types/meta/v1'
 
 export const pluginName = 'hawtio-online-k8s-api'
 export const log = Logger.get(pluginName)
@@ -28,7 +28,9 @@ export interface KubeObject extends Record<string, unknown> {
   spec?: unknown
 }
 
-export interface KubeObjectList<T extends KubeObject> extends KubeObject {
+export interface KubeObjectList<T extends KubeObject> {
+  kind?: string
+  metadata: ListMeta
   items: T[]
 }
 
@@ -39,6 +41,8 @@ export type KubeProject = KubeObject & {
   spec?: NamespaceSpec
   status?: NamespaceStatus
 }
+
+export type KubePodsByProject = { [key: string]: KubePod[] }
 
 /*
  * States emitted by the Kubernetes Service

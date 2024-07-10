@@ -12,7 +12,7 @@ import jsonpath from 'jsonpath'
 import { WatchTypes } from './model'
 import { pathGet } from './utils'
 import { clientFactory, Collection, KOptions, log, ProcessDataCallback } from './client'
-import { K8Actions, KubeObject, KubePod, KubeProject } from './globals'
+import { K8Actions, KubeObject, KubePod, KubePodsByProject, KubeProject } from './globals'
 import { k8Api } from './init'
 
 export interface Client<T extends KubeObject> {
@@ -20,7 +20,7 @@ export interface Client<T extends KubeObject> {
   watch: ProcessDataCallback<T>
 }
 
-class ProjectBookmark {
+class NamespaceBookmark {
 
   private seenProjects = new Set()
   private _current: string = ''
@@ -74,13 +74,13 @@ export class KubernetesService extends EventEmitter {
   private _error: Error | null = null
   private _oAuthProfile: UserProfile | null = null
   private projects: KubeProject[] = []
-  private pods: KubePod[] = []
+  private podsByProject: KubePodsByProject = {}
   private projects_client: Client<KubeProject> | null = null
   private pods_clients: { [key: string]: Client<KubePod> } = {}
 
   private _nsLimit = 3
 
-  private projectBookmark: ProjectBookmark = new ProjectBookmark(this._nsLimit)
+  private nsBookmark: NamespaceBookmark = new NamespaceBookmark(this._nsLimit)
 
   async initialize(): Promise<boolean> {
     if (this._initialized) return this._initialized
@@ -121,9 +121,15 @@ export class KubernetesService extends EventEmitter {
     const pods_client = clientFactory.create<KubePod>({ kind: WatchTypes.PODS, namespace: namespace, nsLimit: this._nsLimit })
     const pods_watch = pods_client.watch(pods => {
       this._loading--
-      this.pods.splice(0, this.pods.length) // clear the array
+
       const jolokiaPods = pods.filter(pod => jsonpath.query(pod, this.jolokiaPortQuery).length > 0)
-      this.pods.push(...jolokiaPods)
+
+      if (jolokiaPods.length > 0) {
+        this.podsByProject[namespace] = jolokiaPods
+      } else {
+        delete this.podsByProject[namespace]
+      }
+
       this.emit(K8Actions.CHANGED)
     })
 
@@ -145,82 +151,40 @@ export class KubernetesService extends EventEmitter {
       // subscribe to pods update for new projects
       let filtered = projects.filter(project => !this.projects.some(p => p.metadata?.uid === project.metadata?.uid))
       for (const project of filtered) {
-
-        //
-        // If the project has already been seen by the bookmark
-        // and is not the current project that the continue ref
-        // is located in then ignore the project
-        //
-        if (this.projectBookmark.hasSeen(project) && ! this.projectBookmark.isCurrent(project))
-          continue
-
-        //
-        // Reached the limit of pods to return
-        //
-        if (this.projectBookmark.podsRemaining === 0) {
-          console.log(this.projectBookmark.print())
-          continue
-        }
-
         this._loading++
+
+        const namespace = project.metadata?.name as string
 
         const podOptions: KOptions = {
           kind: WatchTypes.PODS,
-          namespace: project.metadata?.name,
-          nsLimit: this.projectBookmark.podsRemaining
-        }
-
-        if (this.projectBookmark.isCurrent(project) && this.projectBookmark.continueRef !== null) {
-          //
-          // If the bookmark contains a continueRef then add it in
-          // to retrieve the rest of the pods in the project
-          //
-          podOptions.continueRef = this.projectBookmark.continueRef
+          namespace: namespace,
+          nsLimit: this._nsLimit
         }
 
         const pods_client = clientFactory.create<KubePod>(podOptions)
 
-        if (pods_client.continueRef !== null) {
-          //
-          // Limit has been reached halfway through a project
-          // so store the current project and the continue reference
-          //
-          this.projectBookmark.current = project
-          this.projectBookmark.continueRef = pods_client.continueRef
-        } else {
-          //
-          // All pods in this project have been returned
-          //
-          this.projectBookmark.seen(project)
-        }
-
         const pods_watch = pods_client.watch(pods => {
           this._loading--
-          const others = this.pods.filter(pod => pod.metadata?.namespace !== project.metadata?.name)
-
-          // clear pods
-          this.pods.splice(0, this.pods.length)
-
-          // add others back to pods
-          this.pods.push(...others)
 
           const jolokiaPods = pods.filter(pod => jsonpath.query(pod, this.jolokiaPortQuery).length > 0)
 
-          for (const jpod of jolokiaPods) {
-            const pos = this.pods.findIndex(pod => pod.metadata?.uid === jpod.metadata?.uid)
-            if (pos > -1) {
-              // replace the pod - not sure we need to ...?
-              this.pods.splice(pos, 1)
+          if (jolokiaPods.length > 0) {
+
+            const projectPods: KubePod[] = []
+            for (const jpod of jolokiaPods) {
+              const pos = projectPods.findIndex(pod => pod.metadata?.uid === jpod.metadata?.uid)
+              if (pos > -1) {
+                // replace the pod - not sure we need to ...?
+                projectPods.splice(pos, 1)
+              }
+              projectPods.push(jpod)
             }
 
-            this.pods.push(jpod)
-          }
+            this.podsByProject[namespace] = projectPods
 
-          //
-          // Calculate how many pods are left to list
-          //
-          console.log('Calculating how many pods are left to list')
-          this.projectBookmark.reducePods(this.pods.length)
+          } else {
+            delete this.podsByProject[namespace]
+          }
 
           this.emit(K8Actions.CHANGED)
         })
@@ -232,8 +196,6 @@ export class KubernetesService extends EventEmitter {
 
         console.log('Calling pods_client.connect()')
         pods_client.connect()
-
-
       }
 
       // handle delete projects
@@ -299,9 +261,9 @@ export class KubernetesService extends EventEmitter {
     return mode === this._oAuthProfile?.metadataValue(HAWTIO_MODE_KEY)
   }
 
-  getPods(): KubePod[] {
+  getPods(): KubePodsByProject {
     this.checkInitOrError()
-    return this.pods
+    return this.podsByProject
   }
 
   getProjects(): KubeProject[] {

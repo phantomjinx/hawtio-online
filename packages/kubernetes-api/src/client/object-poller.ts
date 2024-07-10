@@ -37,6 +37,7 @@ export class ObjectPoller<T extends KubeObject> {
         }
 
         const kObjList: KubeObjectList<T> = JSON.parse(data)
+        this.handler.collection.continueRef = kObjList.metadata.continue
 
         log.debug(this.handler.kind, 'fetched data:', data)
         const items = kObjList && kObjList.items ? kObjList.items : []

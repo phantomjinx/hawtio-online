@@ -32,7 +32,7 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
   private _isOpenshift: boolean
   private _oAuthToken: string
 
-  private _continueRef: string|null = null
+  private _continueRef?: string
 
   constructor(private _options: KOptions) {
     this._isOpenshift = k8Api.isOpenshift
@@ -63,8 +63,12 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
     return this._options
   }
 
-  get continueRef(): string|null {
+  get continueRef(): string|undefined {
     return this._continueRef
+  }
+
+  set continueRef(ref: string|undefined) {
+    this._continueRef = ref
   }
 
   private get _restUrl() {
