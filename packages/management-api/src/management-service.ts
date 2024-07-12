@@ -1,8 +1,8 @@
 import { EventEmitter } from 'eventemitter3'
 import { ManagedPod } from './managed-pod'
 import { Connection, Connections, connectService } from '@hawtio/react'
-import { k8Service, k8Api, KubePod, K8Actions, Container, ContainerPort, debounce } from '@hawtio/online-kubernetes-api'
-import { MgmtActions, log } from './globals'
+import { k8Service, k8Api, KubePod, K8Actions, Container, ContainerPort, debounce, KubePodsByProject } from '@hawtio/online-kubernetes-api'
+import { MPodsByProject, MgmtActions, log } from './globals'
 
 interface UpdateEmitter {
   uid?: string
@@ -16,7 +16,7 @@ interface UpdateQueue {
 
 export class ManagementService extends EventEmitter {
   private _initialized = false
-  private _pods: { [key: string]: ManagedPod } = {}
+  private _podsByProject: MPodsByProject = {}
   private pollManagementData = debounce(() => this.mgmtUpdate(), 1000)
   private updateQueue: UpdateQueue = {
     fireUpdate: false,
@@ -40,28 +40,37 @@ export class ManagementService extends EventEmitter {
     }
 
     if (!this.hasError()) {
-      const kPods: KubePod[] = k8Service.getPods()
+      const kPodsByProject: KubePodsByProject = k8Service.getPods()
 
-      kPods.forEach(kPod => {
-        const uid = kPod.metadata?.uid
-        if (!uid) {
-          log.error('Cannot access uid from pod')
-          return
+      Object.entries(kPodsByProject).map(([project, kPods]) => {
+
+        if (!this._podsByProject[project]) {
+          this._podsByProject[project] = {}
         }
 
-        const mPod = this._pods[uid]
-        if (!mPod) {
-          this._pods[uid] = new ManagedPod(kPod)
-        } else {
-          kPod.management = mPod.pod.management
-          mPod.pod = kPod
-        }
+        const pods = this._podsByProject[project]
+        console.log('podsByProject', pods)
 
-        for (const uid in this._pods) {
-          if (!kPods.some(kPod => kPod.metadata?.uid === uid)) {
-            delete this._pods[uid]
+        kPods.forEach(kPod => {
+          const uid = kPod.metadata?.uid
+          if (!uid) {
+            log.error('Cannot access uid from pod')
+            return
           }
-        }
+
+          if (!pods[uid]) {
+            pods[uid] = new ManagedPod(kPod)
+          } else {
+            kPod.management = pods[uid].pod.management
+            pods[uid].pod = kPod
+          }
+
+          for (const uid in pods) {
+            if (!kPods.some(kPod => kPod.metadata?.uid === uid)) {
+              delete pods[uid]
+            }
+          }
+        })
       })
 
       // let's kick a polling cycle
@@ -79,7 +88,11 @@ export class ManagementService extends EventEmitter {
     this.updateQueue.fireUpdate = false
 
     // Add all the uids to the queue
-    Object.keys(this._pods).forEach(uid => this.updateQueue.uids.add(uid))
+    Object.values(this._podsByProject)
+      .map((mPodsByUid) =>
+        Object.keys(mPodsByUid)
+          .forEach(uid => this.updateQueue.uids.add(uid))
+    )
   }
 
   private emitUpdate(emitter: UpdateEmitter) {
@@ -96,7 +109,7 @@ export class ManagementService extends EventEmitter {
   private async mgmtUpdate() {
     this.preMgmtUpdate()
 
-    if (Object.keys(this._pods).length === 0) {
+    if (Object.keys(this._podsByProject).length === 0) {
       /*
        * If there are no pods, we still want an update to fire
        * to let 3rd parties know that updates are happening but
@@ -106,62 +119,62 @@ export class ManagementService extends EventEmitter {
       return
     }
 
-    for (const uid of Object.keys(this._pods)) {
-      const mPod: ManagedPod = this._pods[uid]
+    for (const mPodsByUid of Object.values(this._podsByProject)) {
+      for (const [uid, mPod] of Object.entries(mPodsByUid)) {
+        // Flag that the pod is now under management
+        mPod.getManagement().status.managed = true
 
-      // Flag that the pod is now under management
-      mPod.getManagement().status.managed = true
-
-      // Is the pod actually running at the moment
-      mPod.getManagement().status.running = this.podStatus(mPod) === 'Running'
-      if (!mPod.getManagement().status.running) {
-        /*
-         * No point in trying to fire a jolokia request
-         * against a non-running pod or a pod that cannot connect via jolokia
-         * Emit an update but only if the status has in fact changed
-         */
-        this.emitUpdate({ uid, fireUpdate: mPod.hasChanged() })
-        continue
-      }
-
-      // Reduce the number of times that a pod with managment error is polled
-      const mgmtError = mPod.getManagementError()
-      if (mgmtError) {
-        mPod.incrementErrorPollCount()
-
-        if (mPod.getErrorPolling().count < mPod.getErrorPolling().threshold) {
-          // ignore this probing iteration as we have an error and not reach the polling threshold
+        // Is the pod actually running at the moment
+        mPod.getManagement().status.running = this.podStatus(mPod) === 'Running'
+        if (!mPod.getManagement().status.running) {
+          /*
+           * No point in trying to fire a jolokia request
+           * against a non-running pod or a pod that cannot connect via jolokia
+           * Emit an update but only if the status has in fact changed
+           */
           this.emitUpdate({ uid, fireUpdate: mPod.hasChanged() })
           continue
-        } else {
-          // met the threshold so poll on this occasion but raise the threshold
-          mPod.incrementErrorPollThreshold()
         }
-      }
 
-      /*
-       * Test the jolokia url to see if it is valid
-       */
-      try {
-        const url = await mPod.probeJolokiaUrl()
-        if (!url) {
-          this.emitUpdate({ uid, fireUpdate: mPod.hasChanged() })
+        // Reduce the number of times that a pod with managment error is polled
+        const mgmtError = mPod.getManagementError()
+        if (mgmtError) {
+          mPod.incrementErrorPollCount()
+
+          if (mPod.getErrorPolling().count < mPod.getErrorPolling().threshold) {
+            // ignore this probing iteration as we have an error and not reach the polling threshold
+            this.emitUpdate({ uid, fireUpdate: mPod.hasChanged() })
+            continue
+          } else {
+            // met the threshold so poll on this occasion but raise the threshold
+            mPod.incrementErrorPollThreshold()
+          }
         }
-      } catch (error) {
-        log.error(new Error(`Cannot access jolokia url at ${mPod.jolokiaPath}`, { cause: error }))
-        this.emitUpdate({ uid, fireUpdate: mPod.hasChanged() })
-        continue
-      }
 
-      mPod.search(
-        () => {
-          this.emitUpdate({ uid, fireUpdate: mPod.hasChanged() })
-        },
-        (error: Error) => {
+        /*
+         * Test the jolokia url to see if it is valid
+         */
+        try {
+          const url = await mPod.probeJolokiaUrl()
+          if (!url) {
+            this.emitUpdate({ uid, fireUpdate: mPod.hasChanged() })
+          }
+        } catch (error) {
           log.error(new Error(`Cannot access jolokia url at ${mPod.jolokiaPath}`, { cause: error }))
           this.emitUpdate({ uid, fireUpdate: mPod.hasChanged() })
-        },
-      )
+          continue
+        }
+
+        mPod.search(
+          () => {
+            this.emitUpdate({ uid, fireUpdate: mPod.hasChanged() })
+          },
+          (error: Error) => {
+            log.error(new Error(`Cannot access jolokia url at ${mPod.jolokiaPath}`, { cause: error }))
+            this.emitUpdate({ uid, fireUpdate: mPod.hasChanged() })
+          },
+        )
+      }
     }
   }
 
@@ -181,8 +194,8 @@ export class ManagementService extends EventEmitter {
     return null
   }
 
-  get pods(): ManagedPod[] {
-    return Object.values(this._pods)
+  get pods(): MPodsByProject {
+    return this._podsByProject
   }
 
   podStatus(pod: ManagedPod): string {

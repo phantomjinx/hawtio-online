@@ -1,5 +1,5 @@
 import { ServiceSpec } from 'kubernetes-types/core/v1'
-import { K8S_EXT_PREFIX, KubeObject } from '../globals'
+import { K8S_EXT_PREFIX, KLimitMetadata, KubeObject } from '../globals'
 import {} from '../kubernetes-service'
 import { fetchPath, FetchPathCallback, isFunction, joinPaths } from '../utils'
 import { getClusterIP, getName, getNamespace, namespaced, prefixForKind, toCollectionName, wsUrl } from '../helpers'
@@ -27,12 +27,11 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
   private _namespace?: string
   private _path: string
   private _apiVersion: string
+  private metadata: KLimitMetadata
   private list: ObjectList<T>
   private handler: WSHandler<T>
   private _isOpenshift: boolean
   private _oAuthToken: string
-
-  private _continueRef?: string
 
   constructor(private _options: KOptions) {
     this._isOpenshift = k8Api.isOpenshift
@@ -53,6 +52,9 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
     this.handler = new WSHandlerImpl(this)
     const list = (this.list = new ObjectListImpl(_options.kind, _options.namespace))
     this.handler.list = list
+
+    const metadata = (this.metadata = { remaining: 0 })
+    this.handler.metadata = metadata
   }
 
   get oAuthToken(): string {
@@ -61,14 +63,6 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
 
   get options(): KOptions {
     return this._options
-  }
-
-  get continueRef(): string|undefined {
-    return this._continueRef
-  }
-
-  set continueRef(ref: string|undefined) {
-    this._continueRef = ref
   }
 
   private get _restUrl() {
@@ -89,6 +83,7 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
       url.searchParams.append('limit', `${this.options.nsLimit}`)
     }
 
+    console.log(`ContinueRef: ${this.options.continueRef}`)
     if (this.options.continueRef !== undefined) {
       console.log(`Appending a continue parameter to rest url`)
       url.searchParams.append('continue', this.options.continueRef)
@@ -178,7 +173,7 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
       this.list.doOnce(WatchActions.INIT, cb)
     } else {
       setTimeout(() => {
-        cb(this.list.objects)
+        cb(this.list.objects, this.metadata)
       }, 10)
     }
   }
@@ -241,16 +236,16 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
 
       setTimeout(() => {
         log.debug(this.kind, 'passing existing objects:', this.list.objects)
-        cb(this.list.objects)
+        cb(this.list.objects, this.metadata)
       }, POLLING_INTERVAL)
     }
     log.debug(this.kind, 'adding watch callback:', cb)
 
-    this.list.doOn(WatchActions.ANY, (data: T[]) => {
+    this.list.doOn(WatchActions.ANY, ((data: T[]) => {
       console.log(`Watching all actions for ${this.restURL}`)
       log.debug(this.kind, 'got data:', data)
-      cb(data)
-    })
+      cb(data, this.metadata)
+    }))
     return cb
   }
 
@@ -300,7 +295,7 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
         success: data => {
           try {
             const response = JSON.parse(data)
-            cb(response)
+            cb(response, this.metadata)
           } catch (err) {
             log.error(err)
             if (error && err instanceof Error) {
@@ -343,7 +338,7 @@ export class CollectionImpl<T extends KubeObject> implements Collection<T> {
         success: data => {
           try {
             const response = JSON.parse(data)
-            cb(response)
+            cb(response, this.metadata)
           } catch (err) {
             log.error(err)
             if (error && err instanceof Error) {

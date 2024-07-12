@@ -1,4 +1,5 @@
 import { Logger } from '@hawtio/react'
+import { ManagedPod } from './managed-pod'
 
 export const pluginName = 'hawtio-online-management-api'
 export const log = Logger.get(pluginName)
@@ -9,3 +10,6 @@ export const log = Logger.get(pluginName)
 export enum MgmtActions {
   UPDATED = 'UPDATED',
 }
+
+export type MPodsByUid = { [uid: string]: ManagedPod }
+export type MPodsByProject = { [key: string]: MPodsByUid }

@@ -1,5 +1,5 @@
 import { Logger } from '@hawtio/react'
-import { KubeObject } from '../globals'
+import { KLimitMetadata, KubeObject } from '../globals'
 import { WatchActions, WatchTypes } from '../model'
 
 export const log = Logger.get('hawtio-online-k8s-objects')
@@ -32,7 +32,7 @@ export interface KOptions extends Record<string, unknown> {
   continueRef?: string
 }
 
-export type ProcessDataCallback<T extends KubeObject> = (data: T[]) => void
+export type ProcessDataCallback<T extends KubeObject> = (data: T[], metadata?: KLimitMetadata) => void
 
 export type ErrorDataCallback = (err: Error) => void
 
@@ -41,7 +41,6 @@ export interface Collection<T extends KubeObject> {
   kind: string
   wsURL: string
   restURL: string
-  continueRef: string|undefined
   namespace?: string
   connected: boolean
   oAuthToken: string
@@ -74,6 +73,7 @@ export interface ObjectList<T extends KubeObject> {
 export interface WSHandler<T extends KubeObject> {
   connected: boolean
   kind: string
+  metadata: { remaining: number }
   list: ObjectList<T>
   collection: Collection<T>
   error: ErrorDataCallback | undefined

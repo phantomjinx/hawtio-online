@@ -1,4 +1,4 @@
-import { KubeObject, KubeObjectList } from '../globals'
+import { KLimitMetadata, KubeObject, KubeObjectList } from '../globals'
 import { fetchPath, isFunction, isString, SimpleResponse } from '../utils'
 import { Collection, ErrorDataCallback, log, ObjectList, pollingOnly, WSHandler } from './globals'
 import { ObjectListImpl } from './object-list'
@@ -10,6 +10,7 @@ import { ObjectPoller } from './object-poller'
 export class WSHandlerImpl<T extends KubeObject> implements WSHandler<T> {
   private _collection: Collection<T>
   private _list?: ObjectList<T>
+  private _metadata?: KLimitMetadata
 
   // private retries = 0
   private connectTime = 0
@@ -27,6 +28,14 @@ export class WSHandlerImpl<T extends KubeObject> implements WSHandler<T> {
 
   get list(): ObjectList<T> {
     return this._list || new ObjectListImpl<T>()
+  }
+
+  set metadata(_metadata: KLimitMetadata) {
+    this._metadata = _metadata
+  }
+
+  get metadata(): KLimitMetadata {
+    return this._metadata || { remaining: 0 }
   }
 
   get collection() {
@@ -133,6 +142,9 @@ export class WSHandlerImpl<T extends KubeObject> implements WSHandler<T> {
 
     const eventType: keyof ObjectList<T> = data.type.toLowerCase()
     if (eventType !== 'added' && eventType !== 'modified' && eventType !== 'deleted') return
+
+    this.metadata.continue = data.metadata?.continue ?? undefined
+    this.metadata.remaining = data.metadata?.remaining ?? 0
 
     if (isFunction(this.list[eventType])) this.list[eventType](data.object)
     else log.debug(`Property ${data.object} is not a function`)

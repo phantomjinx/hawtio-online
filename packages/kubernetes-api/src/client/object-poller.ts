@@ -37,9 +37,8 @@ export class ObjectPoller<T extends KubeObject> {
         }
 
         const kObjList: KubeObjectList<T> = JSON.parse(data)
-        this.handler.collection.continueRef = kObjList.metadata.continue
-
         log.debug(this.handler.kind, 'fetched data:', data)
+
         const items = kObjList && kObjList.items ? kObjList.items : []
         const result = compare(this._lastFetch, items)
         this._lastFetch = items
@@ -49,6 +48,10 @@ export class ObjectPoller<T extends KubeObject> {
             const event = {
               data: JSON.stringify({
                 type: action.toUpperCase(),
+                metadata: {
+                  continue: kObjList.metadata.continue,
+                  remaining: kObjList.metadata.remainingItemCount
+                },
                 object: item,
               }),
             }

@@ -1,4 +1,4 @@
-import { isMgmtApiRegistered, mgmtService, ManagedPod, MgmtActions } from '@hawtio/online-management-api'
+import { isMgmtApiRegistered, mgmtService, MPodsByProject, ManagedPod, MgmtActions } from '@hawtio/online-management-api'
 import React, { useRef, useEffect, useState } from 'react'
 import {
   Alert,
@@ -32,7 +32,7 @@ export const Management: React.FunctionComponent = () => {
   const [error, setError] = useState<Error | null>()
   const { username, userLoaded } = useUser()
 
-  const [pods, setPods] = useState<ManagedPod[]>([])
+  const [pods, setPods] = useState<MPodsByProject>({})
 
   useEffect(() => {
     setIsLoading(true)
@@ -52,7 +52,7 @@ export const Management: React.FunctionComponent = () => {
       }
 
       mgmtService.on(MgmtActions.UPDATED, () => {
-        setPods([...mgmtService.pods]) // Use spread to ensure react updates the state
+        setPods(mgmtService.pods) // Use spread to ensure react updates the state
       })
     }
 
@@ -121,7 +121,7 @@ export const Management: React.FunctionComponent = () => {
           </MastheadContent>
         </Masthead>
 
-        {pods.length === 0 && (
+        {Object.keys(pods).length === 0 && (
           <Panel>
             <Divider />
 
@@ -139,13 +139,13 @@ export const Management: React.FunctionComponent = () => {
           </Panel>
         )}
 
-        {pods.length > 0 && (
+        {Object.keys(pods).length > 0 && (
           <Panel>
             <PanelHeader>API Properties</PanelHeader>
             <Divider />
             <PanelMain>
               <PanelMainBody>
-                <ManagementPods pods={pods} />
+                <ManagementPods podsByProject={pods} />
               </PanelMainBody>
             </PanelMain>
           </Panel>
