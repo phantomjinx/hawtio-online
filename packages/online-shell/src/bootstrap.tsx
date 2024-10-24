@@ -1,3 +1,4 @@
+import { artemis } from '@hawtio/artemis-console'
 import { isMgmtApiRegistered } from '@hawtio/online-management-api'
 import { onlineOAuth } from '@hawtio/online-oauth'
 import {
@@ -36,6 +37,8 @@ runtime()
 logs()
 quartz()
 springboot()
+
+artemis()
 
 // Register kubernetes & management - only then complete hawtio bootstrap
 isMgmtApiRegistered().then(() => {

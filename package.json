@@ -15,8 +15,9 @@
     "docker/*"
   ],
   "scripts": {
+    "build:artemis": "yarn workspace @hawtio/artemis-console build",
     "build": "yarn build:online && yarn license",
-    "start:online": "yarn build:mgmt && yarn start:shell",
+    "start:online": "yarn build:mgmt && yarn build:artemis && yarn start:shell",
     "build:online": "yarn workspaces foreach -v -Aipt --exclude @hawtio/online-root --exclude \"@hawtio/*-app\" run build",
     "start:shell": "yarn workspace @hawtio/online-shell start",
     "build:shell": "yarn workspace @hawtio/online-shell build",
