@@ -26,6 +26,7 @@ export function oAuthInitialised(): boolean {
 
 export const onlineOAuth: HawtioPlugin = () => {
   oAuthService.registerUserHooks()
+
   // Register the plugin for replacing the login form in the form auth mode
   hawtio.addPlugin({
     id: 'online-oauth',
